@@ -1,0 +1,170 @@
+---
+title: "PHP2610 - Take Home Final"
+author: "Zeyu Chen, ScM in Biostatistics"
+date: "2019/12/13"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE, comment = '')
+```
+
+```{r predata, include = FALSE}
+# final exam 2019
+# analysis of RHC data
+
+library(MatchIt)
+library(optmatch)
+library(Epi)
+library(splines)
+library(data.table)
+library(fastDummies)
+
+## Right heart cath dataset
+rhc <- read.csv("http://biostat.mc.vanderbilt.edu/wiki/pub/Main/DataSets/rhc.csv")
+## first 6 rows
+head(rhc)
+
+rhc = rhc[(rhc$cat1=="ARF" | rhc$cat1 == "CHF" | rhc$cat1 == "MOSF w/Sepsis" | rhc$cat1=="COPD"),]
+
+
+# define Y = 1 if death by 180 days, 0 if not
+# define A = 1 if RHC, 0 if not
+Y = as.numeric(rhc$death) - 1
+A = as.numeric(rhc$swang1) - 1
+
+# create variable pvt = 1 if private insurance, 0 if not
+rhc$pvt = ifelse( rhc$ninsclas == 'Private', 1, 0 )
+
+# V = rhc[,c(2, 22, 23, 61, 24, 62, 48, 56, 47, 25, 35, 31, 34, 33, 32, 10, 21, 11 )]
+
+# covariate matrix
+# cat1 = disease category
+# meanbp1 = mean BP
+# surv2md1 = survival risk score (continuous measure)
+# resp1 = respiration rate (respirations / minute)
+# income = income (categorical)
+# seps = sepsis diagnosis (blood toxicity, 1=yes, 0=no)
+# amihx = history of acute myocaridal infarct (heart attack, 1=yes, 0=no)
+# pvt = private insurance indicator (1=yes, 0=no)
+
+V = rhc[,c(2, 31, 25, 34, 21, 62, 22, 23, 64, 56)]
+  
+
+# encode sex as 0 = male, 1 = female
+V$sex = ifelse(V$sex=="Male", 0, 1)
+
+# encode income as ordinal variable
+# note:  this is in descending order
+table(V$income, as.numeric(V$income))
+V$income = as.numeric(V$income)
+
+# encode sepsis as 1 = yes, 0 = no
+V$seps = ifelse(V$seps=="Yes", 1, 0)
+
+# this is the dataset you will use for the analysis
+D = cbind(Y, A, V)
+
+# table of disease categories for patients
+table(D$cat1)
+```
+
+## Question 2
+### (a) Report the estimates of $\alpha_0$ and $\alpha_1$ and provide an interpretation of each one in words.    
+```{r q2a}
+# model.0 is an unadjusted linear model (difference in death rate)
+model.0 <- glm(Y ~ A, data = D)
+summary(model.0)
+```
+As shown above, the estimate $\hat{\alpha_0}=0.582062$ is the mean death rate for those who did not receive RHC, the estimate of $\hat{\alpha_1}=0.063460$ is the difference in mean death rate between people who received RHC versus those who did not.  
+
+### (b) Under what assumptions does the estimate of $\alpha_1$ have a causal interpretation?  
+The assumption we need here is: the receipt of RHC is independent of both potential outcomes, that is, $A \!\perp\!\!\!\perp (Y_0,Y_1)$. In other words, the RHC treatment is randomly allocated within the whole study group. With this assumption, we will have $E(Y|A=1)=E(Y_1|A=1)=E(Y_1)$ and $E(Y|A=0)=E(Y_0|A=0)=E(Y_0)$, the causal effect $E(Y_1)-E(Y_0)=E(Y|A=1)-E(Y|A=0)$, which is just the estimate of $\alpha_1$.  
+
+### (c) Report the estimates of $\beta_0$ and $\beta_1$ and provide an interpretation of each one in words.  
+```{r q2c}
+# model.1 estimates the adjusted effect of RHC, conditional on confounders
+# in model.1, note the use of the formula statement to keep things simple
+adj.formula = Y ~ A + as.factor(cat1) + meanbp1 + surv2md1 + resp1 + amihx + as.factor(income) + age + sex + pvt + seps
+model.1 = glm(formula = adj.formula, data = D)
+summary(model.1)
+```
+As shown above, the estimate $\hat{\beta_0}=0.8202497$ is the mean death rate for those who did not receive RHC and had all other covariates equaling to 0. As for the two categorical covariates `cat1` and `income`, equaling to 0 here simply means equaling to their baseline categories respectively. Therefore, this estimated value $\hat{\beta_0}$ is just like a baseline level of death rate is our model, which cannot be achieved in reality given that a person will never have 0 mean BP or 0 respiration rate.  
+If we draw a causal graph of our regression model above, there are two paths from the treatment indicator `A` to the outcome variable `Y`. One of them is directly from `A` to `Y` with no other node in the middle, while the other path is from `A` to `V` first, then links to `Y` from `V`. Therefore, the total effect of A on Y has two sources, the direct effect corresponding to the first direct path, and the mediation effect corresponding to the second path passing through node `V`. By controlling for V in our regression model, we can block the backdoor path between `A` and `Y` passing through node `V`. As this stage, the only existing path between `A` and `Y` is the direct path with no other node in the middle which measures the direct effect of `A` on `Y`. That is to say, the estimate of $\hat{\beta_1}=0.0425562$ is just the direct effect of receiving RHC on the mean death rate controlling for V.  
+
+\bigskip
+\bigskip
+
+## Question 3
+### (a) The model being estimated is a structural causal model. Write that model, and define all relevant terms.  
+The target structural causal model is: $E(Y_a)=\alpha+\beta a$. For this structural model of interest: $a$ is a binary exposure indicator, $a=1$ if exposed (receive treatment) and $a=0$ if not; $Y_0$ and $Y_1$ are two potential outcomes, specifically, $Y_1$ is the death status under treatment and $Y_0$ is the death status under no treatment; $\beta$ here is the causal effect of exposure (receive treatment) on death status we want to know; $\alpha$ is the mean death status under no treatment.  
+
+### (b) Report the estimate of the treatment effect and its standard error.
+```{r q3b}
+# Pscore Formula
+pscore.formula = A ~ as.factor(cat1) + meanbp1 + surv2md1 + resp1 + amihx + as.factor(income) + age + sex + pvt + seps
+
+# pscore model
+pscore.model = glm(formula = pscore.formula, family = binomial, data = D)
+# summary(pscore.model)
+
+D$e.v = predict(pscore.model, type = "response")
+D$ipw = D$A/D$e.v + (1-D$A)/(1-D$e.v)
+
+model.0.IPW = glm(Y ~ A, weights = ipw, data = D)
+summary(model.0.IPW)
+```
+As shown above, the estimate of the treatment effect is $0.04575$ and its standard error is $0.01428$.  
+
+### (c) Provide an interpretation of the estimated treatment effect.
+The estimated treatment effect $0.04575$ here is the difference in `weighted` mean death rate between people who received RHC treatment versus those who did not. The weights used here are calculated from the propensity scores, which will rebalance the data such that the covariates scales in treatment group and control group are nearly the same. Therefore, calculating the difference in `weighted` mean death rate will help us to eliminate the effect of RHC treatment on death status that is affected by other covariates and only concentrate on the direct effect of RHC treatment on death status.  
+
+### (d) State the assumptions needed for the estimated treatment effect to have a causal interpretation.  
+The assumption we need here is: the receipt of RHC is ignorable conditional on the covariates V, that is, $A \!\perp\!\!\!\perp (Y_0,Y_1)|V$. In other words, within distinct levels of covariates V, the RHC treatment is independent of both potential outcomes. Or we can say, it means that the RHC treatment is randomly allocated within distinct levels of covariates V. With this assumption, we will have $E(YA)=E(Y_1A)=E[E(Y_1A|V)]=E[Y_1E(A|V)]=E[Y_1Pr(A=1|V)]=E(Y_1)Pr(A=1|V)$, then we can write out $E(Y_1)=E(\frac{YA}{Pr(A=1|V)})$, similarly, we can write out $E(Y_0)=E(\frac{Y(1-A)}{1-Pr(A=1|V)})$, their difference (Causal Effect) is just the estimated treatment effect in this question, the difference in `weighted` mean death rate between people who received RHC treatment versus those who did not, as mentioned in (c).  
+
+### (e) Conduct an analysis to assess whether, in the weighted dataset, the covariates are balanced between treatment arms.  
+There are totally 10 covariates in this dataset. We first calculate the weighted mean values of treatment arm and control arm respectively for those eight binary covariates and continuous covariates.
+```{r q3e1, echo = TRUE}
+# Test for binary covariates and continuous covariates
+name <- c("meanbp1", "surv2md1", "resp1", "amihx", "age", "sex", "pvt", "seps")
+result_1 <- as.data.frame(matrix(,nrow = 2, ncol = 8))
+idx <- 1
+for (i in name){
+  result_1[1, idx] <- weighted.mean(x = D[ ,i][D$A==1], w = D$ipw[D$A==1])
+  result_1[2, idx] <- weighted.mean(x = D[ ,i][D$A==0], w = D$ipw[D$A==0])
+  idx <- idx + 1
+}
+rownames(result_1) <- c("A=1", "A=0")
+colnames(result_1) <- name
+result_1
+```
+As shown above, the mean values within treatment arm and control arm are very close to each other in the weighted dataset for `meanbp1`, `surv2md1`, `resp1`, `amihx`, `age`, `sex`, `pvt` and `seps` these eight binary covariates and continuous covariates.  
+We create dummy variables for the two categorical covariates `cat1` and `income`, then calculate the weighted mean values of treatment arm and control arm respectively for those created binary dummy variables.
+```{r q3e2, echo = TRUE}
+# calculate weighted mean of a categorical variable cat1
+D$ind.cat1 <- dummy_cols(as.factor(D$cat1))
+D$ind.cat1 <- D$ind.cat1[ ,2:ncol(D$ind.cat1)]
+
+wtd.mean.1 <- apply(D$ind.cat1[D$A==1, ], 2, weighted.mean, w=D$ipw[D$A==1])
+wtd.mean.0 <- apply(D$ind.cat1[D$A==0, ], 2, weighted.mean, w=D$ipw[D$A==0])
+wtd.mean <- rbind(wtd.mean.1, wtd.mean.0)
+rownames(wtd.mean) <- c("A=1", "A=0")
+wtd.mean
+
+# calculate weighted mean of a categorical variable income
+D$ind.income <- dummy_cols(as.factor(D$income))
+D$ind.income <- D$ind.income[ ,2:ncol(D$ind.income)]
+
+income.mean.1 <- apply(D$ind.income[D$A==1, ], 2, weighted.mean, w=D$ipw[D$A==1])
+income.mean.0 <- apply(D$ind.income[D$A==0, ], 2, weighted.mean, w=D$ipw[D$A==0])
+income.mean <- rbind(income.mean.1, income.mean.0)
+rownames(income.mean) <- c("A=1", "A=0")
+income.mean
+```
+As shown above, the proportion of each category within treatment arm and control arm is very close to each other in the weighted dataset for `cat1` and `income` these two categorical covariates.  
+Therefore, according to the results discussed so far, we find that the covariates are balanced between treatment arm and control arm in the weighted dataset.  
+
+\bigskip
+\bigskip
+
+## Question 4
