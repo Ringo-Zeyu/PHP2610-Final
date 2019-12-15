@@ -1,7 +1,7 @@
 ---
 title: "PHP2610 - Take Home Final"
 author: "Zeyu Chen, ScM in Biostatistics"
-date: "2019/12/13"
+date: "Dec/14/2019"
 output: pdf_document
 ---
 
@@ -79,7 +79,8 @@ summary(model.0)
 As shown above, the estimate $\hat{\alpha_0}=0.582062$ is the mean death rate for those who did not receive RHC, the estimate of $\hat{\alpha_1}=0.063460$ is the difference in mean death rate between people who received RHC versus those who did not.  
 
 ### (b) Under what assumptions does the estimate of $\alpha_1$ have a causal interpretation?  
-The assumption we need here is: the receipt of RHC is independent of both potential outcomes, that is, $A \!\perp\!\!\!\perp (Y_0,Y_1)$. In other words, the RHC treatment is randomly allocated within the whole study group. With this assumption, we will have $E(Y|A=1)=E(Y_1|A=1)=E(Y_1)$ and $E(Y|A=0)=E(Y_0|A=0)=E(Y_0)$, the causal effect $E(Y_1)-E(Y_0)=E(Y|A=1)-E(Y|A=0)$, which is just the estimate of $\alpha_1$.  
+The assumption we need here is: the receipt of RHC is independent of both potential outcomes, that is, $A \!\perp\!\!\!\perp (Y_0,Y_1)$. In other words, the RHC treatment is randomly allocated within the whole study group.  
+With this assumption, we will have $E(Y|A=1)=E(Y_1|A=1)=E(Y_1)$ and $E(Y|A=0)=E(Y_0|A=0)=E(Y_0)$, the causal effect $E(Y_1)-E(Y_0)=E(Y|A=1)-E(Y|A=0)$, which is just the estimate of $\alpha_1$.  
 
 ### (c) Report the estimates of $\beta_0$ and $\beta_1$ and provide an interpretation of each one in words.  
 ```{r q2c}
@@ -120,7 +121,8 @@ As shown above, the estimate of the treatment effect is $0.04575$ and its standa
 The estimated treatment effect $0.04575$ here is the difference in `weighted` mean death rate between people who received RHC treatment versus those who did not. The weights used here are calculated from the propensity scores, which will rebalance the data such that the covariates scales in treatment group and control group are nearly the same. Therefore, calculating the difference in `weighted` mean death rate will help us to eliminate the effect of RHC treatment on death status that is affected by other covariates and only concentrate on the direct effect of RHC treatment on death status.  
 
 ### (d) State the assumptions needed for the estimated treatment effect to have a causal interpretation.  
-The assumption we need here is: the receipt of RHC is ignorable conditional on the covariates V, that is, $A \!\perp\!\!\!\perp (Y_0,Y_1)|V$. In other words, within distinct levels of covariates V, the RHC treatment is independent of both potential outcomes. Or we can say, it means that the RHC treatment is randomly allocated within distinct levels of covariates V. With this assumption, we will have $E(YA)=E(Y_1A)=E[E(Y_1A|V)]=E[Y_1E(A|V)]=E[Y_1Pr(A=1|V)]=E(Y_1)Pr(A=1|V)$, then we can write out $E(Y_1)=E(\frac{YA}{Pr(A=1|V)})$, similarly, we can write out $E(Y_0)=E(\frac{Y(1-A)}{1-Pr(A=1|V)})$, their difference (Causal Effect) is just the estimated treatment effect in this question, the difference in `weighted` mean death rate between people who received RHC treatment versus those who did not, as mentioned in (c).  
+The assumption we need here is: the receipt of RHC is ignorable conditional on the covariates V, that is, $A \!\perp\!\!\!\perp (Y_0,Y_1)|V$. In other words, within distinct levels of covariates V, the receipt of RHC treatment is independent of both potential outcomes. Or we can say, it means that the RHC treatment is randomly allocated within distinct levels of covariates V.  
+With this assumption, we will have $E(YA)=E(Y_1A)=E[E(Y_1A|V)]=E[Y_1E(A|V)]=E[Y_1Pr(A=1|V)]=E(Y_1)Pr(A=1|V)$, then we can write out $E(Y_1)=E(\frac{YA}{Pr(A=1|V)})$, similarly, we can write out $E(Y_0)=E(\frac{Y(1-A)}{1-Pr(A=1|V)})$, a sample estimate of their difference (Causal Effect) is just the estimated treatment effect above, the difference in `weighted` mean death rate between people who received RHC treatment versus those who did not, as mentioned in (c).  
 
 ### (e) Conduct an analysis to assess whether, in the weighted dataset, the covariates are balanced between treatment arms.  
 There are totally 10 covariates in this dataset. We first calculate the weighted mean values of treatment arm and control arm respectively for those eight binary covariates and continuous covariates.
@@ -168,3 +170,136 @@ Therefore, according to the results discussed so far, we find that the covariate
 \bigskip
 
 ## Question 4
+### (a) Provide histograms of the propensity scores before and after matching.
+```{r q4a}
+# create matched datasets
+match.nn <- matchit(formula = pscore.formula, data = D)
+m.data.nn <- match.data(match.nn)    # matched dataset 
+match.nn
+# summary(m.data.nn)
+# Histograms of the propensity scores before and after matching
+plot(match.nn, type = "hist", nclass = 20)
+plot(summary(match.nn, standardize=T))
+```
+For every observation in treatment group, we find an obervation in control arm such that the difference between their propensity scores is the smallest. After doing so, as shown above, we will have 1876 1-to-1 matched pairs and the total number of observations in the matched dataset is 3752. The histograms of the propensity scores before and after matching are also shown above.   
+As we can see, the histograms corresponding to treatment arm don't change after matching because we keep all treatment arm observations in the matched data, obviously, the propensity score distribution for treatment arm is slightly left-skewed. The histograms corresponding to control arm change significantly after matching. Specifically, the propensity score distribution for control arm in the raw data is slightly right-skewed, while it changes to a slightly left-skewed distribution in the matched data.  
+Therefore, in the matched data, the propensity score distributions between treatment arm and control arm are much more similar to each other compared to the case in the raw data. We can conclude that the covariates are balanced at population level between treatment arm and control arm in the matched dataset. The second plot also verifies our conclusion. More specifically, the covariates are balanced to represent the treatment arm.     
+
+### (b) Report the estimate and standard error of both $\gamma_1$ and $\gamma_1^*$.
+```{r q4b}
+# formula for adjusted analyses
+adj.formula <- Y ~ A + as.factor(cat1) + meanbp1 + surv2md1 + resp1 + amihx + as.factor(income) + age + sex + pvt + seps
+
+# conduct analysis ... just fit linear model to matched dataset
+model.nn <- lm(Y ~ A , data = m.data.nn)
+summary(model.nn)
+
+# including confounders
+model.nn.adj <- lm(formula = adj.formula, data = m.data.nn)
+summary(model.nn.adj)
+```
+As shown above, the estimate of $\gamma_1$ is $\hat{\gamma_1}=0.05330$ and its standard error is $0.01584$, the estimate of $\gamma_1^*$ is $\hat{\gamma_1^*}=0.0427105$ and its standard error is $0.0149452$.  
+
+### (c) Provide an interpretation of both $\gamma_1$ and $\gamma_1^*$.  
+$\gamma_1$ is the difference in mean death rate between people who received RHC versus those who did not, which is measured in the matched dataset, that is $\gamma_1=E(Y|A=1)-E(Y|A=0)=E(Y_1|A=1)-E(Y|A=0)$. Given that $\gamma_1$ is measured in the matched dataset and the dataset is matched based on treatment arm, we can say $E(Y|A=0)=E(Y_0|A=1)$. As a result, $\gamma_1=E(Y_1|A=1)-E(Y_0|A=1)=E(Y_1-Y_0|A=1)$, which is the average treatment effect among the treated group (ATT).  
+$\gamma_1^*$ is the difference in mean death rate between people who received RHC versus those who did not conditional on V, which is measured in the matched dataset. Or we say, it's the average treatment effect among the treated group (ATT) controlling for V. Following previous idea, $\gamma_1^*=E(Y|A=1,V)-E(Y|A=0,V)=E(Y_1|A=1,V)-E(Y|A=0,V)$. $\gamma_1^*$ is also measured in the matched dataset and the dataset is matched based on treatment arm, we can say $E(Y|A=0,V)=E(Y_0|A=1,V)$. As a result, $\gamma_1^*=E(Y_1|A=1,V)-E(Y_0|A=1,V)=E(Y_1-Y_0|A=1,V)$. Controlling for V here has the same meaning as what has been discussed in Question 2 (c).  
+
+### (d) Based on the output from this analysis, which estimate would you report and why?  
+I will report the estimate of $\gamma_1^*$, the one estimated in the adjusted linear regression model. The reason is that we actually reduce the total size of our dataset by performing nearest neighbor matching, 4630 observations in the raw data and 3752 observations in the matched data, which can to some extent decrease the model performance. Luckily, we can increase the model performance by adjusting for what we have matched on, that is, we find those matched pairs using the covariates, then we adjust for these covariates by including them in the regression model. After doing so, we are able to overcome the negative effect brought by reduction in sample size. As shown in (b), the estimate of $\gamma_1^*$ has standard error $0.0149452$, which is smaller than $0.01584$, the standard error of the estimate of $\gamma_1$. According to all the reasons mentioned above, I will report the estimate of $\gamma_1^*$.  
+
+### (e) The causal effect estimate you report could be biased. Describe a potential source of bias, and indicate the direction of that bias.  
+Skip for a moment.  
+
+\bigskip
+\bigskip
+
+## Question 5
+### (a) Provide histograms of the propensity scores before and after matching.
+```{r q5a, warning = FALSE}
+# create matched datasets - full matching
+match.full <- matchit(formula = pscore.formula, data = D, method = "full")
+m.data.full <- match.data(match.full)    # matched dataset 
+match.full
+# summary(m.data.full)
+# Histograms of the propensity scores
+plot(match.full, type = "hist", nclass = 20)
+plot(summary(match.full, standardize=T))
+```
+We perform full matching in this part, the observations in treatment arm and the observations in control arm are not necessarily 1-to-1 matched, therefore, as shown above, the total number of observations in the matched dataset is still 4630.   
+The histograms of the propensity scores before and after matching are also shown above. Under full matching, both the histogram of treatment arm and that of control arm change significantly. Before matching, the propensity score distribution for treatment arm is slightly left-skewed and that for control arm is slightly right-skewed, these two distributions have significant difference. After matching, both of them change their shapes and they are much more similar to each other.   
+As a result, in the matched dataset, the propensity score distribution for treatment arm and that for control arm are nearly the same, which is believed to be the propensity score distribution for the whole study group. We can conclude that the covariates are balanced at population level between treatment arm and control arm in the matched dataset. The second plot also verifies our conclusion. More specifically, the covariates are balanced to represent the whole study group.  
+
+### (b) Report the estimate and standard error of both $\theta_1$ and $\theta_1^*$.
+```{r q5b}
+# formula for adjusted analyses
+adj.formula <- Y ~ A + as.factor(cat1) + meanbp1 + surv2md1 + resp1 + amihx + as.factor(income) + age + sex + pvt + seps
+
+# conduct analysis ... just fit linear model to matched dataset
+model.full <- lm(Y ~ A , data = m.data.full, weight = weights)
+summary(model.full)
+
+# including confounders
+model.full.adj <- lm(formula = adj.formula, data = m.data.full, weight = weights)
+summary(model.full.adj)
+```
+As shown above, the estimate of $\theta_1$ is $\hat{\theta_1}=0.025745$ and its standard error is $0.014450$, the estimate of $\theta_1^*$ is $\hat{\theta_1^*}=0.0397963$ and its standard error is $0.0133923$.
+
+### (c) Provide an interpretation of both $\theta_1$ and $\theta_1^*$.
+$\theta_1$ is the difference in mean death rate between people who received RHC versus those who did not, which is measured in the matched dataset, that is $\theta_1=E(Y|A=1)-E(Y|A=0)=E(Y_1|A=1)-E(Y_0|A=0)$. Given that $\theta_1$ is measured in the matched dataset and the dataset is matched based on the whole study group (both control arm and treatment arm), we can say $E(Y_1|A=1)=E(Y_1)$ and $E(Y_0|A=0)=E(Y_0)$. As a result, $\theta_1=E(Y_1|A=1)-E(Y_0|A=0)=E(Y_1)-E(Y_0)$, which is the average treatment effect among the whole study group (ATE).  
+$\theta_1^*$ is the difference in mean death rate between people who received RHC versus those who did not conditional on V, which is measured in the matched dataset. Or we say, it's the average treatment effect among the whole study group (ATE) controlling for V. Following previous idea, $\theta_1^*=E(Y|A=1,V)-E(Y|A=0,V)=E(Y_1|A=1,V)-E(Y_0|A=0,V)$. $\theta_1^*$ is also measured in the matched dataset and the dataset is matched based on the whole study group (both control arm and treatment arm), we can say $E(Y_1|A=1,V)=E(Y_1|V)$ and $E(Y_0|A=0,V)=E(Y_0|V)$. As a result, $\theta_1^*=E(Y_1|A=1,V)-E(Y_0|A=0,V)=E(Y_1|V)-E(Y_0|V)=E(Y_1-Y_0|V)$. Controlling for V here has the same meaning as what has been discussed in Question 2 (c).  
+
+### (d) Based on the output from this analysis, which estimate would you report and why?
+I will report the estimate of $\theta_1^*$, the one estimated in the adjusted linear regression model. There are two reasons for that. Firstly, as mentioned in Question 4 (d), we can increase the model performance by adjusting for what we have matched on, that is, we get the matched dataset using the covariates, then we adjust for these covariates by including them in the regression model. Secondly, as shown in the output in (b), the estimate of $\theta_1^*$ has smaller standard error and larger estimated value than the estimate of $\theta_1$. Therefore, it contains more statistical significance, which can also be verified by its larger t-test statistic $2.972$ and lower P-Value $0.00298$. According to all the reasons mentioned above, I will report the estimate of $\theta_1^*$.  
+
+\bigskip
+\bigskip
+
+## Question 6
+### (a) Report the estimated causal effect and provide an interpretation of the effect.
+```{r q6a}
+# G estimation covariates
+G.formula <- Y ~ as.factor(cat1) + meanbp1 + surv2md1 + resp1 + amihx + as.factor(income) + age + sex + pvt + seps
+
+# G estimation with prediction models
+outmodel.1 <- glm(formula = G.formula, data = D[D$A==1,], family = "binomial")
+outmodel.0 <- glm(formula = G.formula, data = D[D$A==0,], family = "binomial")
+
+# generate predictions of potential outcomes
+Y.0 <- predict(outmodel.0, newdata = D, type = "response")
+Y.1 <- predict(outmodel.1, newdata = D, type = "response")
+
+# calculate causal effects
+apply(cbind(Y.1, Y.0, Y.1-Y.0), 2, mean)
+```
+As shown above, the estimated treatment effect is $0.04723688$. This estimated effect here is the average difference between the inputed potential outcomes (death status) of treated and untreated. G-Estimation algorithm generates the inputed values of potential outcomes $Y_0$ and $Y_1$ over a common population. Therefore, when we average the difference between the imputed potential outcomes over the whole study group, we are actually dealing with the effects of treatment in a standardized population. Given this fact, the estimated treatment effect here is the average treatement effect (ATE) of the standardized population. We will formally illustrate this interpretation in the following part (b), where if all the needed assumptions hold, the estimated treatment effect $0.04723688$ can really be interpreted as a causal effect, which is just the average treatment effect among the whole study group (ATE).  
+
+### (b) What are the assumptions needed in order to interpret the treatment effect as a causal effect?
+There are three key assumptions needed:  
+`1.` The receipt of RHC is ignorable conditional on the covariates V, that is, $A \!\perp\!\!\!\perp (Y_0,Y_1)|V$. In other words, within distinct levels of covariates V, the receipt of RHC treatment is independent of both potential outcomes. Or we can say, it means that the RHC treatment is randomly allocated within distinct levels of covariates V.  
+`2.` Within each distinct level of the covariates V, every test patient has some probability of receiving and not receiving the RHC treatment, that is, $0<Pr(A=1|V)<1,\quad\forall\:V$. This probability cannot be $0$ or $1$.  
+`3.` We can correctly specify an association model that relates the observed outcome `Y` to the observed RHC treatment `A` and the covariates `V`. More specifically, we can correctly specify a function `g` for the model $E(Y|A,V)=g(A,V;\gamma)$.  
+With these assumptions, we will have $E(Y|A=1,V)=E(Y_1|A=1,V)=E(Y_1|V)=g(1,V;\gamma)$ and $E(Y|A=0,V)=E(Y_0|A=0,V)=E(Y_0|V)=g(0,V;\gamma)$. Then by the `Law of Total Expectation`, we will have $E(Y_1)=E[E(Y_1|V)]=E(g(1,V;\gamma))$ and $E(Y_0)=E[E(Y_0|V)]=E(g(0,V;\gamma))$, therefore, the causal effect $E(Y_1)-E(Y_0)=E(g(1,V;\gamma))-E(g(0,V;\gamma))$. A sample estimate of this difference (causal effect) is $\frac{1}{n}\sum_{i=1}^{n}g(1,V_i;\gamma)-\frac{1}{n}\sum_{i=1}^{n}g(0,V_i;\gamma)$, which is just the estimated treatment effect calculated above. Therefore, we are able to interpret the treatment effect as a causal effect.  
+
+### (c) Modify the code so that the causal effect being estimated is the average treatment effect among the treated. Report that estimate.
+```{r q6c, echo = TRUE}
+# G estimation with prediction models
+outmodel.1 <- glm(formula = G.formula, data = D[D$A==1, ], family = "binomial")
+outmodel.0 <- glm(formula = G.formula, data = D[D$A==0, ], family = "binomial")
+
+# generate predictions of potential outcomes among the treated
+Y.0.tr <- predict(outmodel.0, newdata = D[D$A==1, ], type = "response")
+Y.1.tr <- predict(outmodel.1, newdata = D[D$A==1, ], type = "response")
+
+# calculate causal effects
+apply(cbind(Y.1.tr, Y.0.tr, Y.1.tr-Y.0.tr), 2, mean)
+```
+As shown above, the estimated average treatment effect among the treated (ATT) is $0.03235832$.  
+
+### (d) Turning back to Part I: under what assumptions is $\beta_1$ an estimate of causal effect? And which causal effect does it represent?  
+The assumption we need here is: the receipt of RHC is ignorable conditional on the covariates V, that is, $A \!\perp\!\!\!\perp (Y_0,Y_1)|V$. In other words, within distinct levels of covariates V, the receipt of RHC treatment is independent of both potential outcomes. Or we can say, it means that the RHC treatment is randomly allocated within distinct levels of covariates V.  
+With this assumption, we will have $\beta_1=E(Y|A=1,V)-E(Y|A=0,V)=E(Y_1|A=1,V)-E(Y_0|A=0,V)=E(Y_1|V)-E(Y_0|V)=E(Y_1-Y_0|V)$, therefore, now $\beta_1$ is an estimate of causal effect, which is the average treatment effect among the whole study group (ATE) controlling for V. Controlling for V here has the same meaning as what has been discussed in Question 2 (c).  
+
+\bigskip
+\bigskip
+
+## Question 8 (BONUS)
